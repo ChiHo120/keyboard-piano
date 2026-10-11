@@ -1,0 +1,17 @@
+# Local audio and generated media
+audio/
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.webm
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Editor and temporary files
+.vscode/
+.idea/
+*.tmp
+*.bak
