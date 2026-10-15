@@ -417,11 +417,17 @@
   .song-step small { display: block; color: var(--muted); line-height: 1.4; }
   .song-step.active { border-color: #f2b85d; background: #664629; }
   .song-step.done { opacity: .5; }
+  .song-step.in-loop { border-color: #7bbda9; }
   .song-panel.is-free .song-step { min-height: 0; }
   .song-step.has-rest-gap { margin-left: var(--rest-gap, 24px); width: max(0px, calc(100% - var(--rest-gap, 24px))); }
   .song-controls { display: flex; gap: 8px; margin-top: 12px; }
   .song-controls button { padding: 6px 10px; }
   .song-controls button:disabled { opacity: .4; cursor: default; }
+  .loop-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 12px; margin-top: 11px; color: var(--muted); font-size: 12px; }
+  .loop-controls[hidden] { display: none; }
+  .loop-controls label { display: inline-flex; align-items: center; gap: 5px; }
+  .loop-controls input[type="number"] { width: 54px; padding: 3px 4px; border: 1px solid rgba(230,201,138,.35); border-radius: 4px; background: #30251d; color: #f3eadc; font: inherit; }
+  .loop-controls input[type="checkbox"] { accent-color: #7bbda9; }
   .audio-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 10px; color: var(--muted); font-size: 11px; }
   .audio-tools input { max-width: 180px; font: inherit; color: var(--muted); }
   .audio-tools span { color: var(--gold); }
@@ -546,6 +552,11 @@
         <div class="timing-track"><div class="timing-fill" id="songTimingFill"></div></div>
       </div>
       <div class="song-steps" id="songSteps"></div>
+      <div class="loop-controls" id="loopControls">
+        <label><input id="loopEnabled" type="checkbox" />循环练习</label>
+        <label>从第 <input id="loopStart" type="number" min="1" value="1" aria-label="循环起始音符" /> 音</label>
+        <label>到第 <input id="loopEnd" type="number" min="1" value="1" aria-label="循环结束音符" /> 音</label>
+      </div>
       <div class="song-controls">
         <button id="restartSong" type="button">重新开始</button>
         <button id="demoSong" type="button">听示范</button>
@@ -652,6 +663,10 @@ const songTitle = document.getElementById("songTitle");
 const songProgress = document.getElementById("songProgress");
 const songCurrent = document.getElementById("songCurrent");
 const songSteps = document.getElementById("songSteps");
+const loopControls = document.getElementById("loopControls");
+const loopEnabled = document.getElementById("loopEnabled");
+const loopStart = document.getElementById("loopStart");
+const loopEnd = document.getElementById("loopEnd");
 const songTimingLabel = document.getElementById("songTimingLabel");
 const songTimingValue = document.getElementById("songTimingValue");
 const songTimingFill = document.getElementById("songTimingFill");
@@ -1218,6 +1233,20 @@ let zoomManuallyChanged = false;
 const practiceHolds = new Map();
 applySavedSettings();
 
+function loopRange() {
+  const total = selectedSong.notes.length;
+  const start = Math.max(1, Math.min(total, Math.trunc(Number(loopStart.value)) || 1));
+  const end = Math.max(start, Math.min(total, Math.trunc(Number(loopEnd.value)) || total));
+  return { start: start - 1, end: end - 1 };
+}
+
+function resetLoopRange() {
+  loopEnabled.checked = false;
+  loopStart.value = "1";
+  loopEnd.value = String(selectedSong.notes.length);
+  loopStart.max = loopEnd.max = String(selectedSong.notes.length);
+}
+
 function keyLabels(note) {
   return BY_NOTE[note].labels.join(" / ") || "鼠标";
 }
@@ -1267,7 +1296,8 @@ function beginRest(noteIndex) {
       songPhaseTimer = requestAnimationFrame(tick);
       return;
     }
-    songIndex += 1;
+    const range = loopRange();
+    songIndex = loopEnabled.checked && songIndex >= range.end ? range.start : songIndex + 1;
     songPhase = "hold";
     if (songIndex >= selectedSong.notes.length) {
       toast.textContent = `${selectedSong.title} 完成！可以重新开始练习。`;
@@ -1281,6 +1311,8 @@ function updateSongPanel() {
   if (!selectedSong) return;
   const scrollTop = songSteps.scrollTop;
   const isFree = practiceMode.value === "free";
+  const range = loopRange();
+  loopControls.hidden = isFree;
   const total = selectedSong.notes.length;
   const done = !isFree && songIndex === total;
   const next = songNote();
@@ -1289,7 +1321,7 @@ function updateSongPanel() {
   originalPlayer.hidden = true;
   originalPlayer.replaceChildren();
   songPanel.classList.toggle("is-free", isFree);
-  songProgress.textContent = isFree ? `自由练习 · 共 ${total} 个音` : done ? `已完成 ${total} / ${total}` : `跟弹进度 ${songIndex + 1} / ${total}`;
+  songProgress.textContent = isFree ? `自由练习 · 共 ${total} 个音` : done ? `已完成 ${total} / ${total}` : `跟弹进度 ${songIndex + 1} / ${total}${loopEnabled.checked ? ` · 循环 ${range.start + 1}-${range.end + 1}` : ""}`;
   songCurrent.replaceChildren();
   if (done) {
     songCurrent.textContent = `《${selectedSong.title}》已完成！`;
@@ -1311,7 +1343,7 @@ function updateSongPanel() {
     const step = document.createElement("button");
     step.type = "button";
     const restGap = previous && previous[2] >= .18 ? Math.min(68, Math.max(24, previous[2] * 110)) : 0;
-    step.className = "song-step" + (index === songIndex ? " active" : "") + (!isFree && index < songIndex ? " done" : "") + (restGap ? " has-rest-gap" : "");
+    step.className = "song-step" + (index === songIndex ? " active" : "") + (!isFree && index < songIndex ? " done" : "") + (!isFree && loopEnabled.checked && index >= range.start && index <= range.end ? " in-loop" : "") + (restGap ? " has-rest-gap" : "");
     if (restGap) step.style.setProperty("--rest-gap", `${restGap}px`);
     step.dataset.songIndex = index;
     step.innerHTML = `<b>${keyLabels(note[0])}</b><small>${index + 1}. ${BY_NOTE[note[0]].sy}<br>按${note[1].toFixed(2)}s · 停${note[2].toFixed(2)}s</small>`;
@@ -1351,6 +1383,7 @@ function openSong() {
   cancelPractice();
   selectedSong = SONGS[songSelect.value];
   if (!selectedSong) return;
+  resetLoopRange();
   loadAudioOffset(songSelect.value);
   loadLocalAudio(songSelect.value);
   songIndex = 0;
@@ -1376,7 +1409,7 @@ practiceMode.addEventListener("change", () => {
   stopDemo();
   cancelPractice();
   if (!selectedSong || songPanel.hidden) return;
-  songIndex = 0;
+  songIndex = loopEnabled.checked && practiceMode.value !== "free" ? loopRange().start : 0;
   songSteps.scrollTop = 0;
   zoomManuallyChanged = false;
   updateSongPanel();
@@ -1389,7 +1422,20 @@ closeSongPanel.addEventListener("click", () => {
   document.querySelectorAll(".is-next").forEach((el) => el.classList.remove("is-next"));
   songSelect.value = "";
 });
-restartSong.addEventListener("click", () => { stopDemo(); cancelPractice(); songIndex = 0; updateSongPanel(); });
+restartSong.addEventListener("click", () => { stopDemo(); cancelPractice(); songIndex = loopEnabled.checked && practiceMode.value !== "free" ? loopRange().start : 0; updateSongPanel(); });
+function changeLoopRange() {
+  if (!selectedSong) return;
+  const range = loopRange();
+  loopStart.value = String(range.start + 1);
+  loopEnd.value = String(range.end + 1);
+  stopDemo();
+  cancelPractice();
+  songIndex = range.start;
+  updateSongPanel();
+}
+loopStart.addEventListener("change", changeLoopRange);
+loopEnd.addEventListener("change", changeLoopRange);
+loopEnabled.addEventListener("change", changeLoopRange);
 demoSong.addEventListener("click", () => {
   if (!selectedSong) return;
   if (songDemoRunning) stopDemo();
@@ -1410,7 +1456,7 @@ songSteps.addEventListener("click", (e) => {
 
 let dragState = null;
 songPanelHead.addEventListener("pointerdown", (e) => {
-  if (e.target.closest("button")) return;
+  if (e.target.closest("button, input, label, select, output")) return;
   const rect = songPanel.getBoundingClientRect();
   dragState = { id: e.pointerId, x: e.clientX, y: e.clientY, left: rect.left, top: rect.top };
   songPanelHead.setPointerCapture(e.pointerId);
@@ -1614,7 +1660,9 @@ function stopDemo() {
   demoToken += 1;
   songDemoRunning = false;
   for (const [note, set] of holds) {
-    if (set.has("demo")) release(note, "demo");
+    for (const source of [...set]) {
+      if (source.startsWith("demo:")) release(note, source);
+    }
   }
   localSongPlayer.pause();
   localSongPlayer.currentTime = 0;
@@ -1627,6 +1675,7 @@ function stopDemo() {
 
 async function playSeq(notes, syncOriginal = false) {
   const token = ++demoToken;
+  const source = `demo:${token}`;
   const tempo = Math.max(.5, Math.min(1.4, Number(demoTempo.value) / 100));
   songDemoRunning = true;
   document.getElementById("scaleBtn").disabled = true;
@@ -1648,9 +1697,10 @@ async function playSeq(notes, syncOriginal = false) {
   }
   for (const [note, hold, rest] of notes.map((item) => Array.isArray(item) ? item : [item, .28, .08])) {
     if (token !== demoToken) break;
-    press(note, "demo");
+    press(note, source);
     await sleep(hold * 1000 / tempo);
-    release(note, "demo");
+    release(note, source);
+    if (token !== demoToken) break;
     await sleep(rest * 1000 / tempo);
   }
   if (token === demoToken) {
